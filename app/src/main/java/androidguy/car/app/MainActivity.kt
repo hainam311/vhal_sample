@@ -14,42 +14,54 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var car: Car
-    private lateinit var carPropertyManager: CarPropertyManager
+    // 1. Change to nullable to match the AOSP API signature
+    private var car: Car? = null
+    private var carPropertyManager: CarPropertyManager? = null
+    
     private val TAG = MainActivity::class.java.simpleName
     private lateinit var text: TextView
-    private val MAX_UPDATE_RATE_HZ = 100f;
+    private val MAX_UPDATE_RATE_HZ = 100f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         text = findViewById(R.id.idReady)
-        initCarPropertyManger()
+        initCarPropertyManager()
     }
-
 
     override fun onStop() {
         super.onStop()
-        if (car.isConnected) {
-            car.disconnect()
+        // 2. Safe disconnect check
+        if (car?.isConnected == true) {
+            car?.disconnect()
         }
     }
 
-    private fun initCarPropertyManger() {
-        if (packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE) && !::car.isInitialized) {
-            car = Car.createCar(this);
-            carPropertyManager = car.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager
-            onCarServiceReady()
+    private fun initCarPropertyManager() {
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE) && car == null) {
+            // 3. Assign to the nullable car variable
+            car = Car.createCar(this)
+            
+            // 4. Safe cast and retrieval
+            carPropertyManager = car?.getCarManager(Car.PROPERTY_SERVICE) as? CarPropertyManager
+            
+            if (carPropertyManager != null) {
+                onCarServiceReady()
+            } else {
+                Log.e(TAG, "CarPropertyManager not available!")
+            }
         }
     }
 
     private fun onCarServiceReady() {
-        if (carPropertyManager.isPropertyAvailable(
+        val manager = carPropertyManager ?: return
+
+        if (manager.isPropertyAvailable(
                 VehiclePropertyIds.PERF_VEHICLE_SPEED,
                 VEHICLE_AREA_TYPE_GLOBAL
             )
         ) {
-            carPropertyManager.registerCallback(
+            manager.registerCallback(
                 callback,
                 VehiclePropertyIds.PERF_VEHICLE_SPEED,
                 MAX_UPDATE_RATE_HZ
@@ -61,16 +73,22 @@ class MainActivity : AppCompatActivity() {
 
     private val callback: CarPropertyEventCallback = object : CarPropertyEventCallback {
         override fun onChangeEvent(p: CarPropertyValue<*>?) {
-            text.text = "Speed: ${p?.value} km/h"
+            // Updating UI on the main thread
+            runOnUiThread {
+                text.text = "Speed: ${p?.value} km/h"
+            }
         }
 
         override fun onErrorEvent(p0: Int, p1: Int) {
-            text.text = "ERROR: Unable to read speed"
+            runOnUiThread {
+                text.text = "ERROR: Unable to read speed"
+            }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        carPropertyManager.unregisterCallback(callback)
+        // 5. Safe unregistration
+        carPropertyManager?.unregisterCallback(callback)
     }
 }
